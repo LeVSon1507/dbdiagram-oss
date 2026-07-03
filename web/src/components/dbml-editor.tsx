@@ -1,8 +1,11 @@
 "use client";
 
+import { autocompletion } from "@codemirror/autocomplete";
 import CodeMirror from "@uiw/react-codemirror";
-import { AlertCircle, Braces } from "lucide-react";
+import { AlertCircle, Braces, WandSparkles } from "lucide-react";
+import { useMemo } from "react";
 
+import { dbmlCompletionSource, dbmlLanguage } from "@/lib/dbml-language";
 import type { SchemaError } from "@/lib/schema";
 import type { Theme } from "@/lib/workspace";
 
@@ -19,6 +22,17 @@ export function DbmlEditor({
   theme,
   onChange,
 }: DbmlEditorProps) {
+  const extensions = useMemo(
+    () => [
+      dbmlLanguage,
+      autocompletion({
+        activateOnTyping: true,
+        override: [dbmlCompletionSource],
+      }),
+    ],
+    [],
+  );
+
   return (
     <section className="editor-panel">
       <header className="panel-heading">
@@ -45,6 +59,7 @@ export function DbmlEditor({
           lineNumbers: true,
         }}
         className="dbml-editor"
+        extensions={extensions}
         height="100%"
         onChange={onChange}
         theme={theme}
@@ -62,7 +77,11 @@ export function DbmlEditor({
         ) : (
           <>
             <span className="status-dot" />
-            Schema valid
+            <span>Schema valid</span>
+            <span className="editor-status__hint">
+              <WandSparkles />
+              Suggestions enabled · Ctrl/⌘ Space
+            </span>
           </>
         )}
       </footer>

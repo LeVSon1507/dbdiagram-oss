@@ -5,7 +5,6 @@ import {
   Background,
   BackgroundVariant,
   Controls,
-  MarkerType,
   MiniMap,
   Panel,
   ReactFlow,
@@ -13,7 +12,6 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
-  type Edge,
   type NodeChange,
   type OnNodeDrag,
 } from "@xyflow/react";
@@ -27,6 +25,10 @@ import {
   SchemaTableNodeView,
   type SchemaTableNode,
 } from "./schema-table-node";
+import {
+  RelationshipEdgeView,
+  type RelationshipEdge,
+} from "./relationship-edge";
 
 interface DiagramCanvasProps {
   schema: ParsedSchema;
@@ -42,6 +44,10 @@ const HEADER_HEIGHT = 50;
 
 const nodeTypes = {
   schemaTable: SchemaTableNodeView,
+};
+
+const edgeTypes = {
+  relationship: RelationshipEdgeView,
 };
 
 function layoutNodes(
@@ -90,19 +96,17 @@ function layoutNodes(
   });
 }
 
-function toEdges(schema: ParsedSchema): Edge[] {
+function toEdges(schema: ParsedSchema): RelationshipEdge[] {
   return schema.relations.map((relation) => ({
     id: relation.id,
     source: relation.sourceTableId,
     sourceHandle: `source-${relation.sourceFieldId}`,
     target: relation.targetTableId,
     targetHandle: `target-${relation.targetFieldId}`,
-    type: "smoothstep",
-    label: `${relation.sourceCardinality} : ${relation.targetCardinality}`,
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      width: 14,
-      height: 14,
+    type: "relationship",
+    data: {
+      sourceCardinality: relation.sourceCardinality,
+      targetCardinality: relation.targetCardinality,
     },
   }));
 }
@@ -120,8 +124,9 @@ function DiagramFlow({
   );
   const [nodes, setNodes, applyNodeChanges] =
     useNodesState<SchemaTableNode>(initialNodes);
-  const [edges, setEdges, applyEdgeChanges] = useEdgesState(toEdges(schema));
-  const { fitView } = useReactFlow<SchemaTableNode, Edge>();
+  const [edges, setEdges, applyEdgeChanges] =
+    useEdgesState<RelationshipEdge>(toEdges(schema));
+  const { fitView } = useReactFlow<SchemaTableNode, RelationshipEdge>();
 
   useEffect(() => {
     setNodes(layoutNodes(schema, positions, search));
@@ -160,6 +165,7 @@ function DiagramFlow({
     <ReactFlow
       colorMode={theme}
       edges={edges}
+      edgeTypes={edgeTypes}
       fitView
       fitViewOptions={{ padding: 0.16 }}
       maxZoom={1.8}

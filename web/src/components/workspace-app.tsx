@@ -16,6 +16,7 @@ import {
   Moon,
   Plus,
   Search,
+  Sparkles,
   Sun,
   Trash2,
   Upload,
@@ -31,6 +32,7 @@ import {
 } from "react";
 
 import { parseDbml } from "@/lib/schema";
+import { analyzeSchema } from "@/lib/suggestions";
 import {
   createDocument,
   loadWorkspace,
@@ -43,6 +45,7 @@ import {
 
 import { DbmlEditor } from "./dbml-editor";
 import { DiagramCanvas } from "./diagram-canvas";
+import { AiAssistant } from "./ai-assistant";
 
 const EMPTY_SOURCE = `Table users {
   id bigint [pk, increment]
@@ -100,6 +103,7 @@ export function WorkspaceApp() {
   const [workspace, setWorkspace] = useState<Workspace>();
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const [transferError, setTransferError] = useState<string>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importFormatRef = useRef<ImportFormat>("dbml");
@@ -122,6 +126,10 @@ export function WorkspaceApp() {
   const parseResult = useMemo(
     () => parseDbml(deferredSource),
     [deferredSource],
+  );
+  const insights = useMemo(
+    () => (parseResult.ok ? analyzeSchema(parseResult.schema) : []),
+    [parseResult],
   );
 
   const updateCurrentDocument = useCallback(
@@ -278,6 +286,19 @@ export function WorkspaceApp() {
     [activeDocument],
   );
 
+  const applyAiSource = useCallback(
+    (source: string) => {
+      const parsed = parseDbml(source);
+      if (!parsed.ok) {
+        setTransferError(`AI proposal is invalid: ${parsed.error.message}`);
+        return;
+      }
+      updateSource(source);
+      setTransferError(undefined);
+    },
+    [updateSource],
+  );
+
   if (!workspace || !activeDocument) {
     return (
       <main className="loading-screen">
@@ -324,6 +345,23 @@ export function WorkspaceApp() {
           </span>
         </div>
         <div className="topbar__actions">
+          <button
+            className={`ai-trigger ${aiOpen ? "is-active" : ""}`}
+            onClick={() => setAiOpen((current) => !current)}
+            type="button"
+          >
+            <Sparkles />
+            <span>AI Architect</span>
+            {insights.some((insight) => insight.severity === "warning") ? (
+              <small>
+                {
+                  insights.filter(
+                    (insight) => insight.severity === "warning",
+                  ).length
+                }
+              </small>
+            ) : null}
+          </button>
           <details className="action-menu">
             <summary>
               <Upload />
@@ -432,8 +470,8 @@ export function WorkspaceApp() {
             ))}
           </nav>
           <footer className="sidebar__footer">
-            <span>Private by default</span>
-            <small>Data never leaves this browser.</small>
+            <span>Local-first by default</span>
+            <small>Only explicit AI actions send the current DBML.</small>
           </footer>
         </aside>
         {sidebarOpen ? (
@@ -515,6 +553,13 @@ export function WorkspaceApp() {
           </button>
         </div>
       ) : null}
+      <AiAssistant
+        insights={insights}
+        onApply={applyAiSource}
+        onClose={() => setAiOpen(false)}
+        open={aiOpen}
+        source={activeDocument.source}
+      />
     </main>
   );
 }

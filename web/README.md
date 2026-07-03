@@ -6,8 +6,14 @@ Flow, CodeMirror, and `@dbml/core`.
 ## Features
 
 - Edit DBML with live validation and source locations for parser errors.
+- DBML syntax highlighting and context-aware autocomplete for snippets, tables,
+  field settings, and common data types.
 - Interactive ER diagram with pan, zoom, minimap, drag, snap-to-grid,
   auto-layout, fit-to-view, and table search.
+- Local schema insights for missing primary keys, likely unlinked foreign keys,
+  and optional relationships.
+- Optional AI Architect for schema review, DBML generation, improvement
+  proposals, and schema questions. AI changes require an explicit Apply action.
 - Create, rename, switch, and delete multiple diagrams.
 - Automatic browser storage persistence. No backend or login is required.
 - Import DBML, PostgreSQL, MySQL, SQL Server, and Oracle schemas.
@@ -45,3 +51,30 @@ node .next/standalone/server.js
 
 The entire workspace stays in the browser's local storage. Back up important
 diagrams with the DBML export before clearing browser data.
+
+## AI configuration
+
+The server route supports providers exposing an OpenAI-compatible
+`/chat/completions` endpoint. Credentials are never returned to the browser.
+
+```bash
+cp .env.example .env.local
+```
+
+Configure:
+
+```dotenv
+AI_BASE_URL=https://api.openai.com/v1
+AI_API_KEY=your-provider-key
+AI_MODEL=your-model-name
+```
+
+For a local provider such as Ollama:
+
+```dotenv
+AI_BASE_URL=http://127.0.0.1:11434/v1
+AI_MODEL=your-local-model
+```
+
+Restart the development server after changing environment variables. DBML is
+sent to the configured provider only when you click an AI action.
