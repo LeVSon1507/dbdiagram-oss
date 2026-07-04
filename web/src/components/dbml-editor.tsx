@@ -1,13 +1,9 @@
 "use client";
 
-import { autocompletion } from "@codemirror/autocomplete";
-import {
-  lintGutter,
-  setDiagnostics,
-  type Diagnostic,
-} from "@codemirror/lint";
+import { autocompletion, startCompletion } from "@codemirror/autocomplete";
+import { lintGutter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import type { Text } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
 import {
   AlertCircle,
@@ -29,14 +25,18 @@ interface DbmlEditorProps {
   onChange: (source: string) => void;
 }
 
+const COMPLETION_SHORTCUT_HINT = "Suggestions enabled · ⌘/Ctrl Shift Space";
+
+function runManualCompletion(editorView: EditorView): boolean {
+  return startCompletion(editorView);
+}
+
 function documentOffset(
   document: Text,
   lineNumber: number,
   columnNumber: number,
 ): number {
-  const line = document.line(
-    Math.min(Math.max(lineNumber, 1), document.lines),
-  );
+  const line = document.line(Math.min(Math.max(lineNumber, 1), document.lines));
   return Math.min(line.to, line.from + Math.max(columnNumber - 1, 0));
 }
 
@@ -73,6 +73,12 @@ export function DbmlEditor({
     () => [
       dbmlLanguage,
       lintGutter(),
+      keymap.of([
+        {
+          key: "Mod-Shift-Space",
+          run: runManualCompletion,
+        },
+      ]),
       autocompletion({
         activateOnTyping: true,
         maxRenderedOptions: 80,
@@ -201,9 +207,7 @@ export function DbmlEditor({
                   <span className="editor-problem__message">
                     {diagnostic.message}
                   </span>
-                  {diagnostic.code ? (
-                    <code>DBML {diagnostic.code}</code>
-                  ) : null}
+                  {diagnostic.code ? <code>DBML {diagnostic.code}</code> : null}
                 </button>
               ))}
             </div>
@@ -216,7 +220,7 @@ export function DbmlEditor({
             <span>Schema valid</span>
             <span className="editor-status__hint">
               <WandSparkles />
-              Suggestions enabled · Ctrl/⌘ Space
+              {COMPLETION_SHORTCUT_HINT}
             </span>
           </>
         </footer>

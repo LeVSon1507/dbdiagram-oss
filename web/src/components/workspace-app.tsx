@@ -27,7 +27,14 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { parseDbml } from "@/lib/schema";
 import {
@@ -317,7 +324,18 @@ export function WorkspaceApp() {
     activeDocumentRef.current = activeDocument;
   }, [activeDocument]);
   const currentSource = activeDocument?.source ?? "";
-  const parseResult = useMemo(() => parseDbml(currentSource), [currentSource]);
+  const deferredSource = useDeferredValue(currentSource);
+  const deferredSearch = useDeferredValue(search);
+  const parseResult = useMemo(
+    () => parseDbml(deferredSource),
+    [deferredSource],
+  );
+  const diagnostics = useMemo(() => {
+    if (currentSource !== deferredSource) {
+      return [];
+    }
+    return parseResult.ok ? [] : parseResult.diagnostics;
+  }, [currentSource, deferredSource, parseResult]);
   const insights = useMemo(
     () => (parseResult.ok ? analyzeSchema(parseResult.schema) : []),
     [parseResult],
@@ -1024,7 +1042,7 @@ export function WorkspaceApp() {
         >
           {showEditorPanel ? (
             <DbmlEditor
-              diagnostics={parseResult.ok ? [] : parseResult.diagnostics}
+              diagnostics={diagnostics}
               onChange={updateSource}
               source={activeDocument.source}
               theme={workspace.theme}
@@ -1069,7 +1087,7 @@ export function WorkspaceApp() {
                     onPositionsChange={updatePositions}
                     positions={activeDocument.positions}
                     schema={parseResult.schema}
-                    search={search}
+                    search={deferredSearch}
                     theme={workspace.theme}
                   />
                 ) : (

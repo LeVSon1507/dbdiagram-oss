@@ -924,6 +924,8 @@ svg {
 
 .dbml-editor .cm-scroller {
   padding-top: 8px;
+  contain: content;
+  overscroll-behavior: contain;
 }
 
 .dbml-editor .cm-gutters {
@@ -1166,6 +1168,11 @@ svg {
   background: var(--bg);
 }
 
+.canvas-stage .react-flow__viewport {
+  will-change: transform;
+  transform: translateZ(0);
+}
+
 .schema-table {
   width: 288px;
   overflow: hidden;
@@ -1173,6 +1180,7 @@ svg {
   border-radius: 9px;
   background: var(--panel-raised);
   box-shadow: 0 8px 26px rgba(15, 23, 42, 0.11);
+  contain: layout paint;
   transition:
     opacity 150ms ease,
     border-color 150ms ease,

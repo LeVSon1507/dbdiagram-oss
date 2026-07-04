@@ -15,8 +15,8 @@ import {
   type NodeChange,
   type OnNodeDrag,
 } from "@xyflow/react";
-import { LayoutGrid, Maximize } from "lucide-react";
-import { useCallback, useEffect, useMemo } from "react";
+import { LayoutGrid, Map as MapIcon, Maximize } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ParsedSchema } from "@/lib/schema";
 import type { Point, Theme } from "@/lib/workspace";
@@ -69,10 +69,9 @@ function buildForeignFieldNamesByTable(
   return foreignFieldNamesByTable;
 }
 
-function layoutNodes(
+function buildLaidOutNodes(
   schema: ParsedSchema,
   positions: Record<string, Point>,
-  search: string,
 ): SchemaTableNode[] {
   const graph = new dagre.graphlib.Graph();
   graph.setDefaultEdgeLabel(() => ({}));
@@ -90,7 +89,6 @@ function layoutNodes(
   dagre.layout(graph);
 
   const foreignFieldNamesByTable = buildForeignFieldNamesByTable(schema);
-  const normalizedSearch = search.trim().toLocaleLowerCase();
   return schema.tables.map((table) => {
     const layout = graph.node(table.id) as { x: number; y: number };
     const height = HEADER_HEIGHT + table.fields.length * FIELD_HEIGHT;
@@ -98,9 +96,6 @@ function layoutNodes(
       x: layout.x - TABLE_WIDTH / 2,
       y: layout.y - height / 2,
     };
-    const searchableText = `${table.schemaName} ${table.name} ${table.fields
-      .map((field) => field.name)
-      .join(" ")}`.toLocaleLowerCase();
 
     return {
       id: table.id,
@@ -111,9 +106,48 @@ function layoutNodes(
         foreignFieldNames: Array.from(
           foreignFieldNamesByTable.get(table.id) ?? new Set<string>(),
         ),
-        dimmed:
-          normalizedSearch.length > 0 &&
-          !searchableText.includes(normalizedSearch),
+        dimmed: false,
+      },
+    };
+  });
+}
+
+function applySearchToNodes(
+  nodes: SchemaTableNode[],
+  search: string,
+): SchemaTableNode[] {
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return nodes.map((nodeValue) =>
+      nodeValue.data.dimmed
+        ? {
+            ...nodeValue,
+            data: {
+              ...nodeValue.data,
+              dimmed: false,
+            },
+          }
+        : nodeValue,
+    );
+  }
+
+  return nodes.map((nodeValue) => {
+    const searchableText =
+      `${nodeValue.data.schemaName} ${nodeValue.data.name} ${nodeValue.data.fields
+        .map((field) => field.name)
+        .join(" ")}`.toLocaleLowerCase();
+    const dimmed = !searchableText.includes(normalizedSearch);
+
+    if (nodeValue.data.dimmed === dimmed) {
+      return nodeValue;
+    }
+
+    return {
+      ...nodeValue,
+      data: {
+        ...nodeValue.data,
+        dimmed,
       },
     };
   });
@@ -141,9 +175,14 @@ function DiagramFlow({
   theme,
   onPositionsChange,
 }: DiagramCanvasProps) {
+  const [miniMapVisible, setMiniMapVisible] = useState(true);
+  const laidOutNodes = useMemo(
+    () => buildLaidOutNodes(schema, positions),
+    [positions, schema],
+  );
   const initialNodes = useMemo(
-    () => layoutNodes(schema, positions, search),
-    [positions, schema, search],
+    () => applySearchToNodes(laidOutNodes, search),
+    [laidOutNodes, search],
   );
   const [nodes, setNodes, applyNodeChanges] =
     useNodesState<SchemaTableNode>(initialNodes);
@@ -153,9 +192,12 @@ function DiagramFlow({
   const { fitView } = useReactFlow<SchemaTableNode, RelationshipEdge>();
 
   useEffect(() => {
-    setNodes(layoutNodes(schema, positions, search));
+    setNodes(applySearchToNodes(laidOutNodes, search));
+  }, [laidOutNodes, search, setNodes]);
+
+  useEffect(() => {
     setEdges(toEdges(schema));
-  }, [positions, schema, search, setEdges, setNodes]);
+  }, [schema, setEdges]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<SchemaTableNode>[]) => {
@@ -175,7 +217,10 @@ function DiagramFlow({
   );
 
   const handleAutoLayout = useCallback(() => {
-    const autoLayout = layoutNodes(schema, {}, search);
+    const autoLayout = applySearchToNodes(
+      buildLaidOutNodes(schema, {}),
+      search,
+    );
     setNodes(autoLayout);
     onPositionsChange(
       Object.fromEntries(autoLayout.map((node) => [node.id, node.position])),
@@ -184,6 +229,10 @@ function DiagramFlow({
       void fitView({ duration: 300, padding: 0.16 });
     });
   }, [fitView, onPositionsChange, schema, search, setNodes]);
+
+  const toggleMiniMapVisibility = useCallback(() => {
+    setMiniMapVisible((currentVisible) => !currentVisible);
+  }, []);
 
   return (
     <ReactFlow
@@ -209,16 +258,18 @@ function DiagramFlow({
         size={1}
         variant={BackgroundVariant.Dots}
       />
-      <MiniMap
-        maskColor={
-          theme === "dark"
-            ? "rgba(22, 17, 13, .72)"
-            : "rgba(248, 243, 234, .72)"
-        }
-        nodeColor="#b59265"
-        pannable
-        zoomable
-      />
+      {miniMapVisible ? (
+        <MiniMap
+          maskColor={
+            theme === "dark"
+              ? "rgba(22, 17, 13, .72)"
+              : "rgba(248, 243, 234, .72)"
+          }
+          nodeColor="#b59265"
+          pannable
+          zoomable
+        />
+      ) : null}
       <Controls position="bottom-right" showInteractive={false} />
       <Panel className="canvas-actions" position="bottom-center">
         <button onClick={handleAutoLayout} type="button">
@@ -231,6 +282,10 @@ function DiagramFlow({
         >
           <Maximize />
           Fit view
+        </button>
+        <button onClick={toggleMiniMapVisibility} type="button">
+          <MapIcon />
+          {miniMapVisible ? "Hide minimap" : "Show minimap"}
         </button>
       </Panel>
     </ReactFlow>
