@@ -21,22 +21,19 @@ import { useCallback, useEffect, useMemo } from "react";
 import type { ParsedSchema } from "@/lib/schema";
 import type { Point, Theme } from "@/lib/workspace";
 
-import {
-  SchemaTableNodeView,
-  type SchemaTableNode,
-} from "./schema-table-node";
+import { SchemaTableNodeView, type SchemaTableNode } from "./schema-table-node";
 import {
   RelationshipEdgeView,
   type RelationshipEdge,
 } from "./relationship-edge";
 
-interface DiagramCanvasProps {
+type DiagramCanvasProps = Readonly<{
   schema: ParsedSchema;
   positions: Record<string, Point>;
   search: string;
   theme: Theme;
   onPositionsChange: (positions: Record<string, Point>) => void;
-}
+}>;
 
 const TABLE_WIDTH = 288;
 const FIELD_HEIGHT = 34;
@@ -49,6 +46,28 @@ const nodeTypes = {
 const edgeTypes = {
   relationship: RelationshipEdgeView,
 };
+
+function buildForeignFieldNamesByTable(
+  schema: ParsedSchema,
+): Map<string, Set<string>> {
+  const foreignFieldNamesByTable = new Map<string, Set<string>>();
+
+  schema.relations.forEach((relation) => {
+    if (!relation.foreignTableId || relation.foreignFieldNames.length === 0) {
+      return;
+    }
+
+    const existingFieldNames =
+      foreignFieldNamesByTable.get(relation.foreignTableId) ??
+      new Set<string>();
+    relation.foreignFieldNames.forEach((fieldName) => {
+      existingFieldNames.add(fieldName);
+    });
+    foreignFieldNamesByTable.set(relation.foreignTableId, existingFieldNames);
+  });
+
+  return foreignFieldNamesByTable;
+}
 
 function layoutNodes(
   schema: ParsedSchema,
@@ -70,6 +89,7 @@ function layoutNodes(
   });
   dagre.layout(graph);
 
+  const foreignFieldNamesByTable = buildForeignFieldNamesByTable(schema);
   const normalizedSearch = search.trim().toLocaleLowerCase();
   return schema.tables.map((table) => {
     const layout = graph.node(table.id) as { x: number; y: number };
@@ -88,6 +108,9 @@ function layoutNodes(
       position,
       data: {
         ...table,
+        foreignFieldNames: Array.from(
+          foreignFieldNamesByTable.get(table.id) ?? new Set<string>(),
+        ),
         dimmed:
           normalizedSearch.length > 0 &&
           !searchableText.includes(normalizedSearch),
@@ -124,8 +147,9 @@ function DiagramFlow({
   );
   const [nodes, setNodes, applyNodeChanges] =
     useNodesState<SchemaTableNode>(initialNodes);
-  const [edges, setEdges, applyEdgeChanges] =
-    useEdgesState<RelationshipEdge>(toEdges(schema));
+  const [edges, setEdges, applyEdgeChanges] = useEdgesState<RelationshipEdge>(
+    toEdges(schema),
+  );
   const { fitView } = useReactFlow<SchemaTableNode, RelationshipEdge>();
 
   useEffect(() => {
@@ -156,7 +180,7 @@ function DiagramFlow({
     onPositionsChange(
       Object.fromEntries(autoLayout.map((node) => [node.id, node.position])),
     );
-    window.requestAnimationFrame(() => {
+    globalThis.requestAnimationFrame(() => {
       void fitView({ duration: 300, padding: 0.16 });
     });
   }, [fitView, onPositionsChange, schema, search, setNodes]);
@@ -180,16 +204,18 @@ function DiagramFlow({
       snapToGrid
     >
       <Background
-        color={theme === "dark" ? "#31384a" : "#d8deea"}
+        color={theme === "dark" ? "#4b3d30" : "#d8c7ab"}
         gap={24}
         size={1}
         variant={BackgroundVariant.Dots}
       />
       <MiniMap
         maskColor={
-          theme === "dark" ? "rgba(9, 12, 20, .72)" : "rgba(241, 245, 249, .72)"
+          theme === "dark"
+            ? "rgba(22, 17, 13, .72)"
+            : "rgba(248, 243, 234, .72)"
         }
-        nodeColor="#7c3aed"
+        nodeColor="#b59265"
         pannable
         zoomable
       />

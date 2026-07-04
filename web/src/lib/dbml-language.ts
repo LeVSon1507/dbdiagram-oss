@@ -98,6 +98,28 @@ function tableNames(source: string): string[] {
     .filter((name): name is string => Boolean(name));
 }
 
+function relationEndpoints(source: string): string[] {
+  return [
+    ...source.matchAll(
+      /\bTable\s+(?:"([^"]+)"|([A-Za-z_][\w.]*))[^{]*\{([\s\S]*?)\}/g,
+    ),
+  ].flatMap((match) => {
+    const tableName = match[1] ?? match[2];
+    if (!tableName) return [];
+
+    return match[3]
+      .split("\n")
+      .map((line) => line.trim().match(/^"?([A-Za-z_][\w]*)"?\s+\S+/)?.[1])
+      .filter(
+        (fieldName): fieldName is string =>
+          Boolean(fieldName) &&
+          fieldName !== "indexes" &&
+          fieldName !== "Note",
+      )
+      .map((fieldName) => `${tableName}.${fieldName}`);
+  });
+}
+
 export function dbmlCompletionOptions(source: string): Completion[] {
   const dynamicTables: Completion[] = tableNames(source).map((name) => ({
     label: name,
@@ -105,6 +127,14 @@ export function dbmlCompletionOptions(source: string): Completion[] {
     detail: "table",
     boost: 90,
   }));
+  const dynamicEndpoints: Completion[] = relationEndpoints(source).map(
+    (label) => ({
+      label,
+      type: "variable",
+      detail: "relation endpoint",
+      boost: 100,
+    }),
+  );
 
   return [
     snippetCompletion("Table ${name} {\n  id bigint [pk, increment]\n  ${}\n}", {
@@ -126,6 +156,7 @@ export function dbmlCompletionOptions(source: string): Completion[] {
       boost: 110,
     }),
     ...dynamicTables,
+    ...dynamicEndpoints,
     ...KEYWORDS.map((label) => ({
       label,
       type: "keyword",

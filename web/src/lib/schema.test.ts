@@ -100,9 +100,53 @@ Ref fk_posts_users: posts.user_id > users.id [delete: cascade, update: restrict]
       ok: false,
       error: {
         message: "Expect a closing brace '}'",
+        severity: "error",
         line: 1,
         column: 14,
+        endLine: 1,
+        endColumn: 14,
+        code: 1005,
       },
+      diagnostics: [
+        {
+          message: "Expect a closing brace '}'",
+          severity: "error",
+          line: 1,
+          column: 14,
+          endLine: 1,
+          endColumn: 14,
+          code: 1005,
+        },
+      ],
     });
+  });
+
+  it("returns every compiler diagnostic for the problems panel", () => {
+    const result = parseDbml(`
+Table posts {
+  id bigint [pk]
+}
+Table posts {
+  id bigint [pk]
+}
+Ref: posts.author_id > users.id
+`);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    expect(result.diagnostics.length).toBeGreaterThan(1);
+    expect(result.error).toBe(result.diagnostics[0]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          line: expect.any(Number),
+          column: expect.any(Number),
+          endLine: expect.any(Number),
+          endColumn: expect.any(Number),
+        }),
+      ]),
+    );
   });
 });

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { dbmlCompletionOptions } from "./dbml-language";
 
 describe("dbmlCompletionOptions", () => {
-  it("includes snippets, data types, and tables from the current document", () => {
+  it("includes snippets, data types, tables, and relation endpoints", () => {
     const labels = dbmlCompletionOptions(
       "Table users {\n id bigint [pk]\n}\nTable posts {}",
     ).map((completion) => completion.label);
@@ -13,5 +13,6 @@ describe("dbmlCompletionOptions", () => {
     expect(labels).toContain("varchar");
     expect(labels).toContain("users");
     expect(labels).toContain("posts");
+    expect(labels).toContain("users.id");
   });
 });

@@ -7,11 +7,13 @@ import {
   type ImportFormat,
 } from "@dbml/core";
 import {
+  BookOpen,
   Check,
   ChevronDown,
   Database,
   Download,
   FileCode2,
+  Files,
   History,
   Menu,
   Moon,
@@ -59,8 +61,10 @@ import {
 
 import { AiAssistant } from "./ai-assistant";
 import { DbmlEditor } from "./dbml-editor";
+import { DbmlReference } from "./dbml-reference";
 import { DiagramCanvas } from "./diagram-canvas";
 import { HistoryDrawer } from "./history-drawer";
+import { IllustrationImage } from "./illustration-image";
 import { MigrationWorkspace } from "./migration-workspace";
 
 const EMPTY_SOURCE = `Table users {
@@ -78,15 +82,18 @@ const IMPORT_OPTIONS: { format: ImportFormat; label: string }[] = [
   { format: "oracle", label: "Oracle" },
 ];
 
-const EXPORT_OPTIONS: { format: ExportFormat; label: string; extension: string }[] =
-  [
-    { format: "dbml", label: "DBML", extension: "dbml" },
-    { format: "postgres", label: "PostgreSQL", extension: "sql" },
-    { format: "mysql", label: "MySQL", extension: "sql" },
-    { format: "mssql", label: "SQL Server", extension: "sql" },
-    { format: "oracle", label: "Oracle", extension: "sql" },
-    { format: "json", label: "JSON model", extension: "json" },
-  ];
+const EXPORT_OPTIONS: {
+  format: ExportFormat;
+  label: string;
+  extension: string;
+}[] = [
+  { format: "dbml", label: "DBML", extension: "dbml" },
+  { format: "postgres", label: "PostgreSQL", extension: "sql" },
+  { format: "mysql", label: "MySQL", extension: "sql" },
+  { format: "mssql", label: "SQL Server", extension: "sql" },
+  { format: "oracle", label: "Oracle", extension: "sql" },
+  { format: "json", label: "JSON model", extension: "json" },
+];
 
 function safeFileName(name: string): string {
   const normalized = name
@@ -119,6 +126,9 @@ export function WorkspaceApp() {
   const [workspace, setWorkspace] = useState<Workspace>();
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<"diagrams" | "reference">(
+    "diagrams",
+  );
   const [aiOpen, setAiOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [snapshots, setSnapshots] = useState<DiagramSnapshot[]>([]);
@@ -145,10 +155,7 @@ export function WorkspaceApp() {
       .then((storedWorkspace) => {
         if (cancelled) return;
         storedWorkspace.documents.forEach((document) => {
-          historiesRef.current.set(
-            document.id,
-            createSessionHistory(document),
-          );
+          historiesRef.current.set(document.id, createSessionHistory(document));
           lastAutoSnapshotSourceRef.current.set(document.id, document.source);
         });
         activeDocumentRef.current = currentDocument(storedWorkspace);
@@ -210,8 +217,7 @@ export function WorkspaceApp() {
       if (!document) return;
       const nextDocument = update(document);
       const history =
-        historiesRef.current.get(document.id) ??
-        createSessionHistory(document);
+        historiesRef.current.get(document.id) ?? createSessionHistory(document);
       const nextHistory = commitHistory(history, nextDocument, reason);
       historiesRef.current.set(document.id, nextHistory);
       activeDocumentRef.current = nextDocument;
@@ -261,10 +267,13 @@ export function WorkspaceApp() {
     [updateCurrentDocument],
   );
 
-  const refreshSnapshots = useCallback(async (documentId: string) => {
-    const items = await repository.listSnapshots(documentId);
-    setSnapshots(items);
-  }, [repository]);
+  const refreshSnapshots = useCallback(
+    async (documentId: string) => {
+      const items = await repository.listSnapshots(documentId);
+      setSnapshots(items);
+    },
+    [repository],
+  );
 
   const createSnapshot = useCallback(
     async (
@@ -329,7 +338,10 @@ export function WorkspaceApp() {
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") {
+      if (
+        !(event.metaKey || event.ctrlKey) ||
+        event.key.toLowerCase() !== "z"
+      ) {
         return;
       }
       event.preventDefault();
@@ -344,18 +356,21 @@ export function WorkspaceApp() {
   }, [redo, undo]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      const document = activeDocumentRef.current;
-      if (
-        !document ||
-        lastAutoSnapshotSourceRef.current.get(document.id) === document.source
-      ) {
-        return;
-      }
-      void createSnapshot(document, "auto").then(() => {
-        lastAutoSnapshotSourceRef.current.set(document.id, document.source);
-      });
-    }, 5 * 60 * 1000);
+    const timer = window.setInterval(
+      () => {
+        const document = activeDocumentRef.current;
+        if (
+          !document ||
+          lastAutoSnapshotSourceRef.current.get(document.id) === document.source
+        ) {
+          return;
+        }
+        void createSnapshot(document, "auto").then(() => {
+          lastAutoSnapshotSourceRef.current.set(document.id, document.source);
+        });
+      },
+      5 * 60 * 1000,
+    );
     return () => window.clearInterval(timer);
   }, [createSnapshot]);
 
@@ -423,14 +438,9 @@ export function WorkspaceApp() {
   const selectDocument = useCallback((documentId: string) => {
     setWorkspace((current) => {
       if (!current) return current;
-      const document = current.documents.find(
-        (item) => item.id === documentId,
-      );
+      const document = current.documents.find((item) => item.id === documentId);
       if (document && !historiesRef.current.has(documentId)) {
-        historiesRef.current.set(
-          documentId,
-          createSessionHistory(document),
-        );
+        historiesRef.current.set(documentId, createSessionHistory(document));
       }
       return { ...current, currentDocumentId: documentId };
     });
@@ -487,7 +497,9 @@ export function WorkspaceApp() {
         setTransferError(undefined);
       } catch (error: unknown) {
         setTransferError(
-          error instanceof Error ? error.message : "Unable to import this file.",
+          error instanceof Error
+            ? error.message
+            : "Unable to import this file.",
         );
       }
     },
@@ -578,18 +590,20 @@ export function WorkspaceApp() {
       setComparisonSnapshot(undefined);
       await refreshSnapshots(activeDocument.id);
     },
-    [
-      activeDocument,
-      createSnapshot,
-      refreshSnapshots,
-      updateCurrentDocument,
-    ],
+    [activeDocument, createSnapshot, refreshSnapshots, updateCurrentDocument],
   );
 
   if (!workspace || !activeDocument) {
     return (
       <main className="loading-screen">
-        <Database />
+        <IllustrationImage
+          alt="Preparing schema workspace"
+          className="state-illustration"
+          height={180}
+          illustration="maintenance"
+          priority
+          width={240}
+        />
         <span>Loading your workspace…</span>
       </main>
     );
@@ -680,9 +694,8 @@ export function WorkspaceApp() {
             {insights.some((insight) => insight.severity === "warning") ? (
               <small>
                 {
-                  insights.filter(
-                    (insight) => insight.severity === "warning",
-                  ).length
+                  insights.filter((insight) => insight.severity === "warning")
+                    .length
                 }
               </small>
             ) : null}
@@ -717,9 +730,7 @@ export function WorkspaceApp() {
               {EXPORT_OPTIONS.map((option) => (
                 <button
                   key={option.format}
-                  onClick={() =>
-                    handleExport(option.format, option.extension)
-                  }
+                  onClick={() => handleExport(option.format, option.extension)}
                   type="button"
                 >
                   {option.label}
@@ -745,7 +756,7 @@ export function WorkspaceApp() {
       <div className="workspace-body">
         <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
           <div className="sidebar__mobile-heading">
-            <strong>Your diagrams</strong>
+            <strong>Workspace</strong>
             <button
               aria-label="Close diagrams"
               className="icon-button"
@@ -755,49 +766,88 @@ export function WorkspaceApp() {
               <X />
             </button>
           </div>
-          <button className="new-diagram" onClick={addDocument} type="button">
-            <Plus />
-            New diagram
-          </button>
-          <nav aria-label="Diagrams" className="diagram-list">
-            {workspace.documents.map((item) => (
-              <div
-                className={`diagram-list__item ${
-                  item.id === workspace.currentDocumentId ? "is-active" : ""
-                }`}
-                key={item.id}
+          <div
+            aria-label="Sidebar sections"
+            className="sidebar-tabs"
+            role="tablist"
+          >
+            <button
+              aria-selected={sidebarTab === "diagrams"}
+              className={sidebarTab === "diagrams" ? "is-active" : ""}
+              onClick={() => setSidebarTab("diagrams")}
+              role="tab"
+              type="button"
+            >
+              <Files />
+              Diagrams
+            </button>
+            <button
+              aria-selected={sidebarTab === "reference"}
+              className={sidebarTab === "reference" ? "is-active" : ""}
+              onClick={() => setSidebarTab("reference")}
+              role="tab"
+              type="button"
+            >
+              <BookOpen />
+              DBML
+            </button>
+          </div>
+          {sidebarTab === "diagrams" ? (
+            <>
+              <button
+                className="new-diagram"
+                onClick={addDocument}
+                type="button"
               >
-                <button
-                  className="diagram-list__select"
-                  onClick={() => selectDocument(item.id)}
-                  type="button"
-                >
-                  <FileCode2 />
-                  <span>
-                    <strong>{item.name || "Untitled diagram"}</strong>
-                    <small>
-                      {new Date(item.updatedAt).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </small>
-                  </span>
-                </button>
-                <button
-                  aria-label={`Delete ${item.name}`}
-                  className="diagram-list__delete"
-                  onClick={() => deleteDocument(item.id)}
-                  type="button"
-                >
-                  <Trash2 />
-                </button>
-              </div>
-            ))}
-          </nav>
-          <footer className="sidebar__footer">
-            <span>Local-first by default</span>
-            <small>Only explicit AI actions send the current DBML.</small>
-          </footer>
+                <Plus />
+                New diagram
+              </button>
+              <nav aria-label="Diagrams" className="diagram-list">
+                {workspace.documents.map((item) => (
+                  <div
+                    className={`diagram-list__item ${
+                      item.id === workspace.currentDocumentId ? "is-active" : ""
+                    }`}
+                    key={item.id}
+                  >
+                    <button
+                      className="diagram-list__select"
+                      onClick={() => selectDocument(item.id)}
+                      type="button"
+                    >
+                      <FileCode2 />
+                      <span>
+                        <strong>{item.name || "Untitled diagram"}</strong>
+                        <small>
+                          {new Date(item.updatedAt).toLocaleDateString(
+                            undefined,
+                            {
+                              month: "short",
+                              day: "numeric",
+                            },
+                          )}
+                        </small>
+                      </span>
+                    </button>
+                    <button
+                      aria-label={`Delete ${item.name}`}
+                      className="diagram-list__delete"
+                      onClick={() => deleteDocument(item.id)}
+                      type="button"
+                    >
+                      <Trash2 />
+                    </button>
+                  </div>
+                ))}
+              </nav>
+              <footer className="sidebar__footer">
+                <span>Local-first by default</span>
+                <small>Only explicit AI actions send the current DBML.</small>
+              </footer>
+            </>
+          ) : (
+            <DbmlReference />
+          )}
         </aside>
         {sidebarOpen ? (
           <button
@@ -810,7 +860,7 @@ export function WorkspaceApp() {
 
         <div className="workbench">
           <DbmlEditor
-            error={parseResult.ok ? undefined : parseResult.error}
+            diagnostics={parseResult.ok ? [] : parseResult.diagnostics}
             onChange={updateSource}
             source={activeDocument.source}
             theme={workspace.theme}
@@ -849,7 +899,13 @@ export function WorkspaceApp() {
                 />
               ) : (
                 <div className="invalid-schema">
-                  <FileCode2 />
+                  <IllustrationImage
+                    alt="Schema needs fixes"
+                    className="state-illustration"
+                    height={180}
+                    illustration="fixTable"
+                    width={240}
+                  />
                   <strong>Fix the DBML to update the diagram</strong>
                   <span>The last valid source remains saved locally.</span>
                 </div>
@@ -893,9 +949,7 @@ export function WorkspaceApp() {
         }}
         onCreate={() => void createManualSnapshot()}
         onDelete={(snapshotId) => void deleteSnapshot(snapshotId)}
-        onRename={(snapshotId, name) =>
-          void renameSnapshot(snapshotId, name)
-        }
+        onRename={(snapshotId, name) => void renameSnapshot(snapshotId, name)}
         onRestore={(snapshot) => void restoreSnapshot(snapshot)}
         open={historyOpen}
         snapshots={snapshots}

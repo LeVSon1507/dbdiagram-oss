@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 
 import type { DiagramSnapshot } from "@/lib/workspace-repository";
+import { IllustrationImage } from "./illustration-image";
 
-interface HistoryDrawerProps {
+type HistoryDrawerProps = Readonly<{
   open: boolean;
   snapshots: DiagramSnapshot[];
   onClose: () => void;
@@ -20,7 +21,7 @@ interface HistoryDrawerProps {
   onDelete: (snapshotId: string) => void;
   onRename: (snapshotId: string, name: string) => void;
   onRestore: (snapshot: DiagramSnapshot) => void;
-}
+}>;
 
 function reasonLabel(reason: DiagramSnapshot["reason"]): string {
   const labels: Record<DiagramSnapshot["reason"], string> = {
@@ -74,7 +75,13 @@ export function HistoryDrawer({
       <div className="snapshot-list">
         {snapshots.length === 0 ? (
           <div className="snapshot-empty">
-            <History />
+            <IllustrationImage
+              alt="No snapshots yet"
+              className="snapshot-empty__illustration"
+              height={160}
+              illustration="serverStatus"
+              width={220}
+            />
             <strong>No snapshots yet</strong>
             <span>Create one before making a major schema change.</span>
           </div>

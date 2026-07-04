@@ -1,7 +1,7 @@
 "use client";
 
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { KeyRound } from "lucide-react";
+import { KeyRound, Link2 } from "lucide-react";
 import { memo } from "react";
 
 import type { SchemaTable } from "@/lib/schema";
@@ -9,6 +9,7 @@ import type { SchemaTable } from "@/lib/schema";
 export type SchemaTableNodeData = SchemaTable &
   Record<string, unknown> & {
     dimmed: boolean;
+    foreignFieldNames: string[];
   };
 
 export type SchemaTableNode = Node<SchemaTableNodeData, "schemaTable">;
@@ -17,6 +18,8 @@ function SchemaTableNodeComponent({
   data,
   selected,
 }: NodeProps<SchemaTableNode>) {
+  const foreignFieldNameSet = new Set(data.foreignFieldNames);
+
   return (
     <article
       className={`schema-table ${selected ? "is-selected" : ""} ${
@@ -32,32 +35,47 @@ function SchemaTableNodeComponent({
         <span className="schema-table__count">{data.fields.length}</span>
       </header>
       <div className="schema-table__fields">
-        {data.fields.map((field) => (
-          <div className="schema-field" key={field.id}>
-            <Handle
-              className="schema-field__handle"
-              id={`target-${field.id}`}
-              position={Position.Left}
-              type="target"
-            />
-            <span className="schema-field__key">
-              {field.primaryKey ? <KeyRound aria-label="Primary key" /> : null}
-            </span>
-            <span className="schema-field__name">{field.name}</span>
-            <span className="schema-field__type">{field.type}</span>
-            {!field.nullable ? (
-              <span className="schema-field__required" title="Not null">
-                N
+        {data.fields.map((field) => {
+          const isForeignKeyField = foreignFieldNameSet.has(field.name);
+
+          return (
+            <div className="schema-field" key={field.id}>
+              <Handle
+                className="schema-field__handle"
+                id={`target-${field.id}`}
+                position={Position.Left}
+                type="target"
+              />
+              <span className="schema-field__key">
+                {field.primaryKey ? (
+                  <KeyRound aria-label="Primary key" />
+                ) : null}
               </span>
-            ) : null}
-            <Handle
-              className="schema-field__handle"
-              id={`source-${field.id}`}
-              position={Position.Right}
-              type="source"
-            />
-          </div>
-        ))}
+              <span className="schema-field__name">
+                {field.name}
+                {isForeignKeyField ? (
+                  <Link2
+                    aria-label="Foreign key"
+                    className="schema-field__foreign"
+                    title="Foreign key"
+                  />
+                ) : null}
+              </span>
+              <span className="schema-field__type">{field.type}</span>
+              {field.nullable ? null : (
+                <span className="schema-field__required" title="Not null">
+                  N
+                </span>
+              )}
+              <Handle
+                className="schema-field__handle"
+                id={`source-${field.id}`}
+                position={Position.Right}
+                type="source"
+              />
+            </div>
+          );
+        })}
       </div>
     </article>
   );

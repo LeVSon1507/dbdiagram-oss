@@ -79,15 +79,25 @@ export interface ParsedSchema {
   relations: SchemaRelation[];
 }
 
-export interface SchemaError {
+export interface SchemaDiagnostic {
   message: string;
-  line?: number;
-  column?: number;
+  severity: "error" | "warning" | "info";
+  line: number;
+  column: number;
+  endLine: number;
+  endColumn: number;
+  code?: number;
 }
+
+export type SchemaError = SchemaDiagnostic;
 
 export type ParseResult =
   | { ok: true; schema: ParsedSchema }
-  | { ok: false; error: SchemaError };
+  | {
+      ok: false;
+      error: SchemaError;
+      diagnostics: SchemaDiagnostic[];
+    };
 
 const DEFAULT_TABLE_COLOR = "#7c3aed";
 
@@ -95,9 +105,9 @@ function tableNodeId(schemaName: string, tableName: string): string {
   return `${schemaName}.${tableName}`;
 }
 
-function firstDiagnostic(error: unknown): CompilerDiagnostic | undefined {
+function compilerDiagnostics(error: unknown): CompilerDiagnostic[] {
   if (error instanceof CompilerError) {
-    return error.diags[0];
+    return error.diags;
   }
 
   if (
@@ -106,36 +116,60 @@ function firstDiagnostic(error: unknown): CompilerDiagnostic | undefined {
     "diags" in error &&
     Array.isArray(error.diags)
   ) {
-    const diagnostic = error.diags[0] as unknown;
-    if (
-      typeof diagnostic === "object" &&
-      diagnostic !== null &&
-      "message" in diagnostic &&
-      typeof diagnostic.message === "string" &&
-      "location" in diagnostic &&
-      typeof diagnostic.location === "object" &&
-      diagnostic.location !== null
-    ) {
-      return diagnostic as CompilerDiagnostic;
-    }
+    return error.diags.filter(
+      (diagnostic: unknown): diagnostic is CompilerDiagnostic =>
+        typeof diagnostic === "object" &&
+        diagnostic !== null &&
+        "message" in diagnostic &&
+        typeof diagnostic.message === "string" &&
+        "location" in diagnostic &&
+        typeof diagnostic.location === "object" &&
+        diagnostic.location !== null &&
+        "start" in diagnostic.location &&
+        typeof diagnostic.location.start === "object" &&
+        diagnostic.location.start !== null &&
+        "line" in diagnostic.location.start &&
+        typeof diagnostic.location.start.line === "number" &&
+        "column" in diagnostic.location.start &&
+        typeof diagnostic.location.start.column === "number",
+    );
   }
 
-  return undefined;
+  return [];
 }
 
-function errorMessage(error: unknown): SchemaError {
-  const diagnostic = firstDiagnostic(error);
-  if (diagnostic) {
-    return {
-      message: diagnostic.message,
-      line: diagnostic.location.start.line,
-      column: diagnostic.location.start.column,
-    };
-  }
-
+function toSchemaDiagnostic(
+  diagnostic: CompilerDiagnostic,
+): SchemaDiagnostic {
+  const { start, end } = diagnostic.location;
   return {
-    message: error instanceof Error ? error.message : "Unable to parse DBML.",
+    message: diagnostic.message,
+    severity:
+      diagnostic.type === "warning" || diagnostic.type === "info"
+        ? diagnostic.type
+        : "error",
+    line: start.line,
+    column: start.column,
+    endLine: end?.line ?? start.line,
+    endColumn: end?.column ?? start.column + 1,
+    code: diagnostic.code,
   };
+}
+
+function errorDiagnostics(error: unknown): SchemaDiagnostic[] {
+  const diagnostics = compilerDiagnostics(error).map(toSchemaDiagnostic);
+  if (diagnostics.length > 0) return diagnostics;
+
+  return [
+    {
+      message: error instanceof Error ? error.message : "Unable to parse DBML.",
+      severity: "error",
+      line: 1,
+      column: 1,
+      endLine: 1,
+      endColumn: 2,
+    },
+  ];
 }
 
 function toSchema(model: NormalizedModel): ParsedSchema {
@@ -292,6 +326,7 @@ export function parseDbml(source: string): ParseResult {
     const database = parser.parse(source, "dbmlv2");
     return { ok: true, schema: toSchema(database.normalize()) };
   } catch (error: unknown) {
-    return { ok: false, error: errorMessage(error) };
+    const diagnostics = errorDiagnostics(error);
+    return { ok: false, error: diagnostics[0], diagnostics };
   }
 }
