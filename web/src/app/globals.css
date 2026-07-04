@@ -368,10 +368,15 @@ svg {
   background: var(--panel-muted);
 }
 
+.action-menu__content button.is-active {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
 .workspace-body {
   display: grid;
   min-height: 0;
-  grid-template-columns: 252px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 252px) 10px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -381,6 +386,46 @@ svg {
   flex-direction: column;
   padding: 14px 12px;
   border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.pane-resizer {
+  position: relative;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+}
+
+.pane-resizer::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 4px;
+  right: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-strong) 60%, transparent);
+  content: "";
+  transition: background 150ms ease;
+}
+
+.pane-resizer:hover::before,
+.pane-resizer:focus-visible::before {
+  background: color-mix(in srgb, var(--accent-ink) 55%, var(--border));
+}
+
+.pane-resizer:focus-visible {
+  outline: 0;
+}
+
+.pane-resizer--sidebar {
+  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.pane-resizer--editor {
+  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
   background: var(--panel);
 }
 
@@ -782,7 +827,19 @@ svg {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: minmax(320px, 38%) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, var(--editor-width, 38%)) 10px minmax(
+      0,
+      1fr
+    );
+}
+
+.workbench.layout-code,
+.workbench.layout-diagram {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workbench.layout-code .editor-panel {
+  border-right: 0;
 }
 
 .editor-panel,
@@ -2517,6 +2574,10 @@ svg {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .pane-resizer--sidebar {
+    display: none;
+  }
+
   .sidebar {
     position: fixed;
     top: 0;
@@ -2628,6 +2689,15 @@ svg {
   .workbench {
     grid-template-rows: minmax(240px, 42%) minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workbench.layout-code,
+  .workbench.layout-diagram {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .pane-resizer--editor {
+    display: none;
   }
 
   .editor-panel {

@@ -27,14 +27,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { parseDbml } from "@/lib/schema";
 import {
@@ -95,6 +88,34 @@ const EXPORT_OPTIONS: {
   { format: "json", label: "JSON model", extension: "json" },
 ];
 
+type ScreenLayout = "split" | "code" | "diagram";
+
+const DEFAULT_SIDEBAR_WIDTH = 252;
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 420;
+const DEFAULT_EDITOR_WIDTH = 38;
+const MIN_EDITOR_WIDTH = 26;
+const MAX_EDITOR_WIDTH = 72;
+
+const SCREEN_LAYOUT_OPTIONS: { layout: ScreenLayout; label: string }[] = [
+  { layout: "split", label: "Split editor & diagram" },
+  { layout: "code", label: "Code focus" },
+  { layout: "diagram", label: "Diagram focus" },
+];
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function layoutLabel(layout: ScreenLayout): string {
+  const labelByLayout: Record<ScreenLayout, string> = {
+    split: "Split view",
+    code: "Code focus",
+    diagram: "Diagram focus",
+  };
+  return labelByLayout[layout];
+}
+
 function safeFileName(name: string): string {
   const normalized = name
     .trim()
@@ -125,6 +146,9 @@ function currentDocument(workspace: Workspace): DiagramDocument {
 export function WorkspaceApp() {
   const [workspace, setWorkspace] = useState<Workspace>();
   const [search, setSearch] = useState("");
+  const [screenLayout, setScreenLayout] = useState<ScreenLayout>("split");
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [editorWidth, setEditorWidth] = useState(DEFAULT_EDITOR_WIDTH);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<"diagrams" | "reference">(
     "diagrams",
@@ -144,14 +168,108 @@ export function WorkspaceApp() {
   const [repository] = useState<WorkspaceRepository>(() =>
     createWorkspaceRepository(),
   );
+  const workspaceBodyRef = useRef<HTMLDivElement>(null);
+  const workbenchRef = useRef<HTMLDivElement>(null);
   const historiesRef = useRef(new Map<string, SessionHistory>());
   const activeDocumentRef = useRef<DiagramDocument | undefined>(undefined);
   const lastAutoSnapshotSourceRef = useRef(new Map<string, string>());
 
+  const updateSidebarWidth = useCallback((nextWidth: number) => {
+    const workspaceBodyWidth =
+      workspaceBodyRef.current?.getBoundingClientRect().width ?? 0;
+    const maxAllowedWidth =
+      workspaceBodyWidth > 0
+        ? Math.min(MAX_SIDEBAR_WIDTH, workspaceBodyWidth - 560)
+        : MAX_SIDEBAR_WIDTH;
+    const boundedMaxWidth = Math.max(MIN_SIDEBAR_WIDTH, maxAllowedWidth);
+    setSidebarWidth(clampNumber(nextWidth, MIN_SIDEBAR_WIDTH, boundedMaxWidth));
+  }, []);
+
+  const updateEditorWidth = useCallback((nextWidth: number) => {
+    setEditorWidth(clampNumber(nextWidth, MIN_EDITOR_WIDTH, MAX_EDITOR_WIDTH));
+  }, []);
+
+  const handleSidebarResizeStart = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (globalThis.matchMedia("(max-width: 980px)").matches) {
+        return;
+      }
+      event.preventDefault();
+      const pointerStartX = event.clientX;
+      const widthAtStart = sidebarWidth;
+
+      function handlePointerMove(moveEvent: PointerEvent): void {
+        const nextWidth = widthAtStart + (moveEvent.clientX - pointerStartX);
+        updateSidebarWidth(nextWidth);
+      }
+
+      function handlePointerUp(): void {
+        globalThis.removeEventListener("pointermove", handlePointerMove);
+        globalThis.removeEventListener("pointerup", handlePointerUp);
+      }
+
+      globalThis.addEventListener("pointermove", handlePointerMove);
+      globalThis.addEventListener("pointerup", handlePointerUp);
+    },
+    [sidebarWidth, updateSidebarWidth],
+  );
+
+  const handleEditorResizeStart = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (globalThis.matchMedia("(max-width: 720px)").matches) {
+        return;
+      }
+      event.preventDefault();
+      const workbenchWidth =
+        workbenchRef.current?.getBoundingClientRect().width ?? 1;
+      const pointerStartX = event.clientX;
+      const widthAtStart = editorWidth;
+
+      function handlePointerMove(moveEvent: PointerEvent): void {
+        const deltaRatio = (moveEvent.clientX - pointerStartX) / workbenchWidth;
+        const nextWidth = widthAtStart + deltaRatio * 100;
+        updateEditorWidth(nextWidth);
+      }
+
+      function handlePointerUp(): void {
+        globalThis.removeEventListener("pointermove", handlePointerMove);
+        globalThis.removeEventListener("pointerup", handlePointerUp);
+      }
+
+      globalThis.addEventListener("pointermove", handlePointerMove);
+      globalThis.addEventListener("pointerup", handlePointerUp);
+    },
+    [editorWidth, updateEditorWidth],
+  );
+
+  const handleSidebarResizeKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+      event.preventDefault();
+      const delta = event.key === "ArrowLeft" ? -16 : 16;
+      updateSidebarWidth(sidebarWidth + delta);
+    },
+    [sidebarWidth, updateSidebarWidth],
+  );
+
+  const handleEditorResizeKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+      event.preventDefault();
+      const delta = event.key === "ArrowLeft" ? -2 : 2;
+      updateEditorWidth(editorWidth + delta);
+    },
+    [editorWidth, updateEditorWidth],
+  );
+
   useEffect(() => {
     let cancelled = false;
     void repository
-      .initialize(window.localStorage)
+      .initialize(globalThis.localStorage)
       .then((storedWorkspace) => {
         if (cancelled) return;
         storedWorkspace.documents.forEach((document) => {
@@ -179,7 +297,7 @@ export function WorkspaceApp() {
   useEffect(() => {
     if (!workspace) return;
     globalThis.document.documentElement.dataset.theme = workspace.theme;
-    const timer = window.setTimeout(() => {
+    const timer = globalThis.setTimeout(() => {
       void repository
         .saveWorkspace(workspace)
         .catch((error: unknown) =>
@@ -190,7 +308,7 @@ export function WorkspaceApp() {
           ),
         );
     }, 250);
-    return () => window.clearTimeout(timer);
+    return () => globalThis.clearTimeout(timer);
   }, [repository, workspace]);
 
   const activeDocument = workspace ? currentDocument(workspace) : undefined;
@@ -198,11 +316,8 @@ export function WorkspaceApp() {
   useEffect(() => {
     activeDocumentRef.current = activeDocument;
   }, [activeDocument]);
-  const deferredSource = useDeferredValue(activeDocument?.source ?? "");
-  const parseResult = useMemo(
-    () => parseDbml(deferredSource),
-    [deferredSource],
-  );
+  const currentSource = activeDocument?.source ?? "";
+  const parseResult = useMemo(() => parseDbml(currentSource), [currentSource]);
   const insights = useMemo(
     () => (parseResult.ok ? analyzeSchema(parseResult.schema) : []),
     [parseResult],
@@ -351,12 +466,12 @@ export function WorkspaceApp() {
         undo();
       }
     };
-    window.addEventListener("keydown", handleShortcut);
-    return () => window.removeEventListener("keydown", handleShortcut);
+    globalThis.addEventListener("keydown", handleShortcut);
+    return () => globalThis.removeEventListener("keydown", handleShortcut);
   }, [redo, undo]);
 
   useEffect(() => {
-    const timer = window.setInterval(
+    const timer = globalThis.setInterval(
       () => {
         const document = activeDocumentRef.current;
         if (
@@ -371,15 +486,15 @@ export function WorkspaceApp() {
       },
       5 * 60 * 1000,
     );
-    return () => window.clearInterval(timer);
+    return () => globalThis.clearInterval(timer);
   }, [createSnapshot]);
 
   useEffect(() => {
     if (activeDocumentId && historyOpen) {
-      const frame = window.requestAnimationFrame(() => {
+      const frame = globalThis.requestAnimationFrame(() => {
         void refreshSnapshots(activeDocumentId);
       });
-      return () => window.cancelAnimationFrame(frame);
+      return () => globalThis.cancelAnimationFrame(frame);
     }
   }, [activeDocumentId, historyOpen, refreshSnapshots]);
 
@@ -609,6 +724,10 @@ export function WorkspaceApp() {
     );
   }
 
+  const showEditorPanel = screenLayout === "split" || screenLayout === "code";
+  const showDiagramPanel =
+    screenLayout === "split" || screenLayout === "diagram";
+
   return (
     <main className="workspace-shell">
       <header className="topbar">
@@ -738,6 +857,27 @@ export function WorkspaceApp() {
               ))}
             </div>
           </details>
+          <details className="action-menu layout-menu">
+            <summary>
+              <span>{layoutLabel(screenLayout)}</span>
+              <ChevronDown />
+            </summary>
+            <div className="action-menu__content action-menu__content--right">
+              <small>Screen layout</small>
+              {SCREEN_LAYOUT_OPTIONS.map((layoutOption) => (
+                <button
+                  className={
+                    screenLayout === layoutOption.layout ? "is-active" : ""
+                  }
+                  key={layoutOption.layout}
+                  onClick={() => setScreenLayout(layoutOption.layout)}
+                  type="button"
+                >
+                  {layoutOption.label}
+                </button>
+              ))}
+            </div>
+          </details>
           <button
             aria-label={`Switch to ${
               workspace.theme === "dark" ? "light" : "dark"
@@ -753,7 +893,15 @@ export function WorkspaceApp() {
         </div>
       </header>
 
-      <div className="workspace-body">
+      <div
+        className="workspace-body"
+        ref={workspaceBodyRef}
+        style={
+          {
+            "--sidebar-width": `${sidebarWidth}px`,
+          } as React.CSSProperties
+        }
+      >
         <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
           <div className="sidebar__mobile-heading">
             <strong>Workspace</strong>
@@ -849,6 +997,13 @@ export function WorkspaceApp() {
             <DbmlReference />
           )}
         </aside>
+        <button
+          aria-label="Resize sidebar"
+          className="pane-resizer pane-resizer--sidebar"
+          onKeyDown={handleSidebarResizeKeyDown}
+          onPointerDown={handleSidebarResizeStart}
+          type="button"
+        />
         {sidebarOpen ? (
           <button
             aria-label="Close sidebar"
@@ -858,60 +1013,81 @@ export function WorkspaceApp() {
           />
         ) : null}
 
-        <div className="workbench">
-          <DbmlEditor
-            diagnostics={parseResult.ok ? [] : parseResult.diagnostics}
-            onChange={updateSource}
-            source={activeDocument.source}
-            theme={workspace.theme}
-          />
-          <section className="canvas-panel">
-            <header className="panel-heading canvas-heading">
-              <div>
-                <Database />
-                <span>Diagram</span>
-                {parseResult.ok ? (
-                  <small>
-                    {parseResult.schema.tables.length} tables ·{" "}
-                    {parseResult.schema.relations.length} relations
-                  </small>
-                ) : null}
-              </div>
-              <label className="table-search">
-                <Search />
-                <input
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Find a table…"
-                  type="search"
-                  value={search}
-                />
-              </label>
-            </header>
-            <div className="canvas-stage">
-              {parseResult.ok ? (
-                <DiagramCanvas
-                  key={activeDocument.id}
-                  onPositionsChange={updatePositions}
-                  positions={activeDocument.positions}
-                  schema={parseResult.schema}
-                  search={search}
-                  theme={workspace.theme}
-                />
-              ) : (
-                <div className="invalid-schema">
-                  <IllustrationImage
-                    alt="Schema needs fixes"
-                    className="state-illustration"
-                    height={180}
-                    illustration="fixTable"
-                    width={240}
-                  />
-                  <strong>Fix the DBML to update the diagram</strong>
-                  <span>The last valid source remains saved locally.</span>
+        <div
+          className={`workbench layout-${screenLayout}`}
+          ref={workbenchRef}
+          style={
+            {
+              "--editor-width": `${editorWidth}%`,
+            } as React.CSSProperties
+          }
+        >
+          {showEditorPanel ? (
+            <DbmlEditor
+              diagnostics={parseResult.ok ? [] : parseResult.diagnostics}
+              onChange={updateSource}
+              source={activeDocument.source}
+              theme={workspace.theme}
+            />
+          ) : null}
+          {screenLayout === "split" ? (
+            <button
+              aria-label="Resize code panel"
+              className="pane-resizer pane-resizer--editor"
+              onKeyDown={handleEditorResizeKeyDown}
+              onPointerDown={handleEditorResizeStart}
+              type="button"
+            />
+          ) : null}
+          {showDiagramPanel ? (
+            <section className="canvas-panel">
+              <header className="panel-heading canvas-heading">
+                <div>
+                  <Database />
+                  <span>Diagram</span>
+                  {parseResult.ok ? (
+                    <small>
+                      {parseResult.schema.tables.length} tables ·{" "}
+                      {parseResult.schema.relations.length} relations
+                    </small>
+                  ) : null}
                 </div>
-              )}
-            </div>
-          </section>
+                <label className="table-search">
+                  <Search />
+                  <input
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Find a table…"
+                    type="search"
+                    value={search}
+                  />
+                </label>
+              </header>
+              <div className="canvas-stage">
+                {parseResult.ok ? (
+                  <DiagramCanvas
+                    key={activeDocument.id}
+                    onPositionsChange={updatePositions}
+                    positions={activeDocument.positions}
+                    schema={parseResult.schema}
+                    search={search}
+                    theme={workspace.theme}
+                  />
+                ) : (
+                  <div className="invalid-schema">
+                    <IllustrationImage
+                      alt="Schema needs fixes"
+                      className="state-illustration"
+                      height={180}
+                      illustration="fixTable"
+                      width={240}
+                    />
+                    <strong>Fix the DBML to update the diagram</strong>
+                    <span>The last valid source remains saved locally.</span>
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
         </div>
       </div>
 
