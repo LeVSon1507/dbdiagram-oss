@@ -16,13 +16,20 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import type { AiAction, AiResult } from "@/lib/ai";
+import {
+  createAiProposal,
+  isProposalStale,
+  resolveAiProposal,
+  setProposalHunkAccepted,
+  type AiProposal,
+} from "@/lib/ai-proposal";
 import type { SchemaInsight } from "@/lib/suggestions";
 
 interface AiAssistantProps {
   insights: SchemaInsight[];
   open: boolean;
   source: string;
-  onApply: (source: string) => void;
+  onApply: (source: string) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -75,6 +82,7 @@ export function AiAssistant({
   const [action, setAction] = useState<AiAction>("ask");
   const [prompt, setPrompt] = useState("");
   const [result, setResult] = useState<AiResult>();
+  const [proposal, setProposal] = useState<AiProposal>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
 
@@ -101,6 +109,7 @@ export function AiAssistant({
       setLoading(true);
       setError(undefined);
       setResult(undefined);
+      setProposal(undefined);
 
       try {
         const response = await fetch("/api/ai", {
@@ -119,6 +128,9 @@ export function AiAssistant({
         const parsed = parseResult(value);
         if (!parsed) throw new Error("AI returned an unsupported response.");
         setResult(parsed);
+        setProposal(
+          parsed.dbml ? createAiProposal(source, parsed.dbml) : undefined,
+        );
       } catch (requestError: unknown) {
         setError(
           requestError instanceof Error
@@ -290,16 +302,119 @@ export function AiAssistant({
                 ))}
               </ul>
             ) : null}
-            {result.dbml ? (
+            {proposal ? (
               <div className="ai-proposal">
                 <div>
                   <strong>Proposed DBML</strong>
-                  <small>{result.dbml.split("\n").length} lines</small>
+                  <small>{proposal.hunks.length} change group(s)</small>
                 </div>
-                <pre>{result.dbml.slice(0, 1400)}</pre>
-                <button onClick={() => onApply(result.dbml ?? "")} type="button">
+                <div className="ai-proposal__bulk">
+                  <button
+                    onClick={() =>
+                      setProposal((current) =>
+                        current
+                          ? current.hunks.reduce(
+                              (next, hunk) =>
+                                setProposalHunkAccepted(next, hunk.id, true),
+                              current,
+                            )
+                          : current,
+                      )
+                    }
+                    type="button"
+                  >
+                    Accept all
+                  </button>
+                  <button
+                    onClick={() =>
+                      setProposal((current) =>
+                        current
+                          ? current.hunks.reduce(
+                              (next, hunk) =>
+                                setProposalHunkAccepted(next, hunk.id, false),
+                              current,
+                            )
+                          : current,
+                      )
+                    }
+                    type="button"
+                  >
+                    Reject all
+                  </button>
+                </div>
+                <div className="ai-hunks">
+                  {proposal.hunks.map((hunk) => (
+                    <article
+                      className={hunk.accepted ? "is-accepted" : "is-rejected"}
+                      key={hunk.id}
+                    >
+                      <header>
+                        <span>
+                          Lines {hunk.oldStart}–{hunk.oldStart + hunk.oldLines}
+                        </span>
+                        <button
+                          onClick={() =>
+                            setProposal((current) =>
+                              current
+                                ? setProposalHunkAccepted(
+                                    current,
+                                    hunk.id,
+                                    !hunk.accepted,
+                                  )
+                                : current,
+                            )
+                          }
+                          type="button"
+                        >
+                          {hunk.accepted ? "Accepted" : "Rejected"}
+                        </button>
+                      </header>
+                      <pre>
+                        {hunk.lines.map((line, index) => (
+                          <span
+                            className={
+                              line.startsWith("+")
+                                ? "is-added"
+                                : line.startsWith("-")
+                                  ? "is-removed"
+                                  : ""
+                            }
+                            key={`${hunk.id}-${index}`}
+                          >
+                            {line}
+                            {"\n"}
+                          </span>
+                        ))}
+                      </pre>
+                    </article>
+                  ))}
+                </div>
+                {isProposalStale(proposal, source) ? (
+                  <p className="ai-proposal__stale">
+                    The editor changed after this proposal. Run AI again before
+                    applying it.
+                  </p>
+                ) : null}
+                <button
+                  disabled={
+                    isProposalStale(proposal, source) ||
+                    !proposal.hunks.some((hunk) => hunk.accepted)
+                  }
+                  onClick={() => {
+                    try {
+                      void onApply(resolveAiProposal(proposal, source));
+                    } catch (proposalError: unknown) {
+                      setError(
+                        proposalError instanceof Error
+                          ? proposalError.message
+                          : "Unable to apply AI proposal.",
+                      );
+                    }
+                  }}
+                  type="button"
+                >
                   <CheckCircle2 />
-                  Apply to editor
+                  Apply accepted changes
                 </button>
               </div>
             ) : null}

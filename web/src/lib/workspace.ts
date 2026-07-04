@@ -19,7 +19,7 @@ export interface Workspace {
   theme: Theme;
 }
 
-const STORAGE_KEY = "dbdiagram-local.workspace.v1";
+export const LEGACY_STORAGE_KEY = "dbdiagram-local.workspace.v1";
 
 export const SAMPLE_SOURCE = `Project personal_blog {
   database_type: 'PostgreSQL'
@@ -111,7 +111,7 @@ function isDocument(value: unknown): value is DiagramDocument {
   );
 }
 
-function isWorkspace(value: unknown): value is Workspace {
+export function isWorkspace(value: unknown): value is Workspace {
   return (
     isRecord(value) &&
     typeof value.currentDocumentId === "string" &&
@@ -125,18 +125,14 @@ function isWorkspace(value: unknown): value is Workspace {
   );
 }
 
-export function loadWorkspace(storage: Storage): Workspace {
-  const raw = storage.getItem(STORAGE_KEY);
-  if (!raw) return createWorkspace();
+export function readLegacyWorkspace(storage: Storage): Workspace | undefined {
+  const raw = storage.getItem(LEGACY_STORAGE_KEY);
+  if (!raw) return undefined;
 
   try {
     const value: unknown = JSON.parse(raw);
-    return isWorkspace(value) ? value : createWorkspace();
+    return isWorkspace(value) ? value : undefined;
   } catch {
-    return createWorkspace();
+    return undefined;
   }
-}
-
-export function saveWorkspace(storage: Storage, workspace: Workspace): void {
-  storage.setItem(STORAGE_KEY, JSON.stringify(workspace));
 }

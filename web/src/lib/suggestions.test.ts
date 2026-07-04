@@ -12,6 +12,8 @@ describe("analyzeSchema", () => {
           name: "posts",
           schemaName: "public",
           color: "#7c3aed",
+          indexes: [],
+          checks: [],
           fields: [
             {
               id: "1",
@@ -21,6 +23,7 @@ describe("analyzeSchema", () => {
               unique: false,
               nullable: false,
               increment: false,
+              checks: [],
             },
           ],
         },
@@ -42,6 +45,8 @@ describe("analyzeSchema", () => {
           name: "users",
           schemaName: "public",
           color: "#7c3aed",
+          indexes: [],
+          checks: [],
           fields: [
             {
               id: "1",
@@ -51,6 +56,7 @@ describe("analyzeSchema", () => {
               unique: false,
               nullable: false,
               increment: true,
+              checks: [],
             },
           ],
         },

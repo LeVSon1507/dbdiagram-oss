@@ -13,7 +13,17 @@ Flow, CodeMirror, and `@dbml/core`.
 - Local schema insights for missing primary keys, likely unlinked foreign keys,
   and optional relationships.
 - Optional AI Architect for schema review, DBML generation, improvement
-  proposals, and schema questions. AI changes require an explicit Apply action.
+  proposals, and schema questions. AI changes can be accepted or rejected by
+  hunk before an explicit Apply action.
+- Unified undo and redo for DBML edits and table positions.
+- IndexedDB persistence with automatic migration from the previous
+  `localStorage` format.
+- Durable version history with manual, automatic, pre-import, pre-AI, and
+  pre-restore snapshots.
+- Semantic schema comparison covering tables, columns, indexes, checks,
+  defaults, nullability, primary keys, unique constraints, and relationships.
+- PostgreSQL migration preview with explicit rename mapping, dependency-safe
+  ordering, destructive-operation warnings, copy, and download.
 - Create, rename, switch, and delete multiple diagrams.
 - Automatic browser storage persistence. No backend or login is required.
 - Import DBML, PostgreSQL, MySQL, SQL Server, and Oracle schemas.
@@ -49,8 +59,9 @@ npm run build
 node .next/standalone/server.js
 ```
 
-The entire workspace stays in the browser's local storage. Back up important
-diagrams with the DBML export before clearing browser data.
+The entire workspace and up to 50 snapshots per diagram stay in browser
+IndexedDB. Back up important diagrams with the DBML export before clearing
+browser data.
 
 ## AI configuration
 

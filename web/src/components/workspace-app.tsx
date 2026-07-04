@@ -12,13 +12,16 @@ import {
   Database,
   Download,
   FileCode2,
+  History,
   Menu,
   Moon,
   Plus,
+  Redo2,
   Search,
   Sparkles,
   Sun,
   Trash2,
+  Undo2,
   Upload,
   X,
 } from "lucide-react";
@@ -32,20 +35,33 @@ import {
 } from "react";
 
 import { parseDbml } from "@/lib/schema";
+import {
+  commitHistory,
+  createSessionHistory,
+  redoHistory,
+  undoHistory,
+  type HistoryReason,
+  type SessionHistory,
+} from "@/lib/session-history";
 import { analyzeSchema } from "@/lib/suggestions";
 import {
   createDocument,
-  loadWorkspace,
-  saveWorkspace,
   type DiagramDocument,
   type Point,
   type Theme,
   type Workspace,
 } from "@/lib/workspace";
+import {
+  createWorkspaceRepository,
+  type DiagramSnapshot,
+  type WorkspaceRepository,
+} from "@/lib/workspace-repository";
 
+import { AiAssistant } from "./ai-assistant";
 import { DbmlEditor } from "./dbml-editor";
 import { DiagramCanvas } from "./diagram-canvas";
-import { AiAssistant } from "./ai-assistant";
+import { HistoryDrawer } from "./history-drawer";
+import { MigrationWorkspace } from "./migration-workspace";
 
 const EMPTY_SOURCE = `Table users {
   id bigint [pk, increment]
@@ -104,24 +120,77 @@ export function WorkspaceApp() {
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [snapshots, setSnapshots] = useState<DiagramSnapshot[]>([]);
+  const [comparisonSnapshot, setComparisonSnapshot] =
+    useState<DiagramSnapshot>();
+  const [historyAvailability, setHistoryAvailability] = useState({
+    canUndo: false,
+    canRedo: false,
+  });
   const [transferError, setTransferError] = useState<string>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importFormatRef = useRef<ImportFormat>("dbml");
+  const [repository] = useState<WorkspaceRepository>(() =>
+    createWorkspaceRepository(),
+  );
+  const historiesRef = useRef(new Map<string, SessionHistory>());
+  const activeDocumentRef = useRef<DiagramDocument | undefined>(undefined);
+  const lastAutoSnapshotSourceRef = useRef(new Map<string, string>());
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      setWorkspace(loadWorkspace(window.localStorage));
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
+    let cancelled = false;
+    void repository
+      .initialize(window.localStorage)
+      .then((storedWorkspace) => {
+        if (cancelled) return;
+        storedWorkspace.documents.forEach((document) => {
+          historiesRef.current.set(
+            document.id,
+            createSessionHistory(document),
+          );
+          lastAutoSnapshotSourceRef.current.set(document.id, document.source);
+        });
+        activeDocumentRef.current = currentDocument(storedWorkspace);
+        setHistoryAvailability({ canUndo: false, canRedo: false });
+        setWorkspace(storedWorkspace);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setTransferError(
+            error instanceof Error
+              ? error.message
+              : "Unable to open local workspace.",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repository]);
 
   useEffect(() => {
     if (!workspace) return;
-    saveWorkspace(window.localStorage, workspace);
     globalThis.document.documentElement.dataset.theme = workspace.theme;
-  }, [workspace]);
+    const timer = window.setTimeout(() => {
+      void repository
+        .saveWorkspace(workspace)
+        .catch((error: unknown) =>
+          setTransferError(
+            error instanceof Error
+              ? error.message
+              : "Unable to save local workspace.",
+          ),
+        );
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [repository, workspace]);
 
   const activeDocument = workspace ? currentDocument(workspace) : undefined;
+  const activeDocumentId = activeDocument?.id;
+  useEffect(() => {
+    activeDocumentRef.current = activeDocument;
+  }, [activeDocument]);
   const deferredSource = useDeferredValue(activeDocument?.source ?? "");
   const parseResult = useMemo(
     () => parseDbml(deferredSource),
@@ -133,41 +202,171 @@ export function WorkspaceApp() {
   );
 
   const updateCurrentDocument = useCallback(
-    (update: (document: DiagramDocument) => DiagramDocument) => {
-      setWorkspace((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          documents: current.documents.map((item) =>
-            item.id === current.currentDocumentId ? update(item) : item,
-          ),
-        };
+    (
+      update: (document: DiagramDocument) => DiagramDocument,
+      reason: HistoryReason,
+    ) => {
+      const document = activeDocumentRef.current;
+      if (!document) return;
+      const nextDocument = update(document);
+      const history =
+        historiesRef.current.get(document.id) ??
+        createSessionHistory(document);
+      const nextHistory = commitHistory(history, nextDocument, reason);
+      historiesRef.current.set(document.id, nextHistory);
+      activeDocumentRef.current = nextDocument;
+      setHistoryAvailability({
+        canUndo: nextHistory.past.length > 0,
+        canRedo: nextHistory.future.length > 0,
       });
+      setWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              documents: current.documents.map((item) =>
+                item.id === document.id ? nextDocument : item,
+              ),
+            }
+          : current,
+      );
     },
     [],
   );
 
   const updateSource = useCallback(
     (source: string) => {
-      updateCurrentDocument((current) => ({
-        ...current,
-        source,
-        updatedAt: new Date().toISOString(),
-      }));
+      updateCurrentDocument(
+        (current) => ({
+          ...current,
+          source,
+          updatedAt: new Date().toISOString(),
+        }),
+        "typing",
+      );
     },
     [updateCurrentDocument],
   );
 
   const updatePositions = useCallback(
     (positions: Record<string, Point>) => {
-      updateCurrentDocument((current) => ({
-        ...current,
-        positions,
-        updatedAt: new Date().toISOString(),
-      }));
+      updateCurrentDocument(
+        (current) => ({
+          ...current,
+          positions,
+          updatedAt: new Date().toISOString(),
+        }),
+        "drag",
+      );
     },
     [updateCurrentDocument],
   );
+
+  const refreshSnapshots = useCallback(async (documentId: string) => {
+    const items = await repository.listSnapshots(documentId);
+    setSnapshots(items);
+  }, [repository]);
+
+  const createSnapshot = useCallback(
+    async (
+      document: DiagramDocument,
+      reason: DiagramSnapshot["reason"],
+      name?: string,
+    ) => {
+      await repository.createSnapshot(document, reason, name);
+      lastAutoSnapshotSourceRef.current.set(document.id, document.source);
+      await refreshSnapshots(document.id);
+    },
+    [refreshSnapshots, repository],
+  );
+
+  const undo = useCallback(() => {
+    const document = activeDocumentRef.current;
+    if (!document) return;
+    const history =
+      historiesRef.current.get(document.id) ?? createSessionHistory(document);
+    const nextHistory = undoHistory(history);
+    historiesRef.current.set(document.id, nextHistory);
+    activeDocumentRef.current = nextHistory.present;
+    setHistoryAvailability({
+      canUndo: nextHistory.past.length > 0,
+      canRedo: nextHistory.future.length > 0,
+    });
+    setWorkspace((current) =>
+      current
+        ? {
+            ...current,
+            documents: current.documents.map((item) =>
+              item.id === document.id ? nextHistory.present : item,
+            ),
+          }
+        : current,
+    );
+  }, []);
+
+  const redo = useCallback(() => {
+    const document = activeDocumentRef.current;
+    if (!document) return;
+    const history =
+      historiesRef.current.get(document.id) ?? createSessionHistory(document);
+    const nextHistory = redoHistory(history);
+    historiesRef.current.set(document.id, nextHistory);
+    activeDocumentRef.current = nextHistory.present;
+    setHistoryAvailability({
+      canUndo: nextHistory.past.length > 0,
+      canRedo: nextHistory.future.length > 0,
+    });
+    setWorkspace((current) =>
+      current
+        ? {
+            ...current,
+            documents: current.documents.map((item) =>
+              item.id === document.id ? nextHistory.present : item,
+            ),
+          }
+        : current,
+    );
+  }, []);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") {
+        return;
+      }
+      event.preventDefault();
+      if (event.shiftKey) {
+        redo();
+      } else {
+        undo();
+      }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [redo, undo]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const document = activeDocumentRef.current;
+      if (
+        !document ||
+        lastAutoSnapshotSourceRef.current.get(document.id) === document.source
+      ) {
+        return;
+      }
+      void createSnapshot(document, "auto").then(() => {
+        lastAutoSnapshotSourceRef.current.set(document.id, document.source);
+      });
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [createSnapshot]);
+
+  useEffect(() => {
+    if (activeDocumentId && historyOpen) {
+      const frame = window.requestAnimationFrame(() => {
+        void refreshSnapshots(activeDocumentId);
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+  }, [activeDocumentId, historyOpen, refreshSnapshots]);
 
   const addDocument = useCallback(() => {
     setWorkspace((current) => {
@@ -176,16 +375,21 @@ export function WorkspaceApp() {
         `Diagram ${current.documents.length + 1}`,
         EMPTY_SOURCE,
       );
+      historiesRef.current.set(next.id, createSessionHistory(next));
+      lastAutoSnapshotSourceRef.current.set(next.id, next.source);
       return {
         ...current,
         currentDocumentId: next.id,
         documents: [...current.documents, next],
       };
     });
+    setHistoryAvailability({ canUndo: false, canRedo: false });
     setSidebarOpen(false);
   }, []);
 
   const deleteDocument = useCallback((documentId: string) => {
+    historiesRef.current.delete(documentId);
+    lastAutoSnapshotSourceRef.current.delete(documentId);
     setWorkspace((current) => {
       if (!current) return current;
       const remaining = current.documents.filter(
@@ -203,18 +407,38 @@ export function WorkspaceApp() {
       }
 
       const replacement = createDocument("Untitled diagram", EMPTY_SOURCE);
+      historiesRef.current.set(
+        replacement.id,
+        createSessionHistory(replacement),
+      );
       return {
         ...current,
         currentDocumentId: replacement.id,
         documents: [replacement],
       };
     });
+    setHistoryAvailability({ canUndo: false, canRedo: false });
   }, []);
 
   const selectDocument = useCallback((documentId: string) => {
-    setWorkspace((current) =>
-      current ? { ...current, currentDocumentId: documentId } : current,
-    );
+    setWorkspace((current) => {
+      if (!current) return current;
+      const document = current.documents.find(
+        (item) => item.id === documentId,
+      );
+      if (document && !historiesRef.current.has(documentId)) {
+        historiesRef.current.set(
+          documentId,
+          createSessionHistory(document),
+        );
+      }
+      return { ...current, currentDocumentId: documentId };
+    });
+    const history = historiesRef.current.get(documentId);
+    setHistoryAvailability({
+      canUndo: Boolean(history?.past.length),
+      canRedo: Boolean(history?.future.length),
+    });
     setSidebarOpen(false);
   }, []);
 
@@ -234,6 +458,9 @@ export function WorkspaceApp() {
       if (!file) return;
 
       try {
+        if (activeDocument) {
+          await createSnapshot(activeDocument, "before-import");
+        }
         const input = await file.text();
         const source =
           importFormatRef.current === "dbml"
@@ -245,6 +472,8 @@ export function WorkspaceApp() {
         }
 
         const next = createDocument(file.name.replace(/\.[^.]+$/, ""), source);
+        historiesRef.current.set(next.id, createSessionHistory(next));
+        lastAutoSnapshotSourceRef.current.set(next.id, next.source);
         setWorkspace((current) =>
           current
             ? {
@@ -254,6 +483,7 @@ export function WorkspaceApp() {
               }
             : current,
         );
+        setHistoryAvailability({ canUndo: false, canRedo: false });
         setTransferError(undefined);
       } catch (error: unknown) {
         setTransferError(
@@ -261,7 +491,7 @@ export function WorkspaceApp() {
         );
       }
     },
-    [],
+    [activeDocument, createSnapshot],
   );
 
   const handleExport = useCallback(
@@ -287,16 +517,73 @@ export function WorkspaceApp() {
   );
 
   const applyAiSource = useCallback(
-    (source: string) => {
+    async (source: string) => {
       const parsed = parseDbml(source);
       if (!parsed.ok) {
         setTransferError(`AI proposal is invalid: ${parsed.error.message}`);
         return;
       }
-      updateSource(source);
+      if (!activeDocument) return;
+      await createSnapshot(activeDocument, "before-ai");
+      updateCurrentDocument(
+        (current) => ({
+          ...current,
+          source,
+          updatedAt: new Date().toISOString(),
+        }),
+        "ai",
+      );
       setTransferError(undefined);
     },
-    [updateSource],
+    [activeDocument, createSnapshot, updateCurrentDocument],
+  );
+
+  const createManualSnapshot = useCallback(async () => {
+    if (!activeDocument) return;
+    await createSnapshot(activeDocument, "manual");
+  }, [activeDocument, createSnapshot]);
+
+  const renameSnapshot = useCallback(
+    async (snapshotId: string, name: string) => {
+      if (!activeDocument) return;
+      await repository.renameSnapshot(snapshotId, name);
+      await refreshSnapshots(activeDocument.id);
+    },
+    [activeDocument, refreshSnapshots, repository],
+  );
+
+  const deleteSnapshot = useCallback(
+    async (snapshotId: string) => {
+      if (!activeDocument) return;
+      await repository.deleteSnapshot(snapshotId);
+      await refreshSnapshots(activeDocument.id);
+    },
+    [activeDocument, refreshSnapshots, repository],
+  );
+
+  const restoreSnapshot = useCallback(
+    async (snapshot: DiagramSnapshot) => {
+      if (!activeDocument) return;
+      await createSnapshot(activeDocument, "before-restore");
+      updateCurrentDocument(
+        (current) => ({
+          ...current,
+          name: snapshot.documentName,
+          source: snapshot.source,
+          positions: snapshot.positions,
+          updatedAt: new Date().toISOString(),
+        }),
+        "restore",
+      );
+      setComparisonSnapshot(undefined);
+      await refreshSnapshots(activeDocument.id);
+    },
+    [
+      activeDocument,
+      createSnapshot,
+      refreshSnapshots,
+      updateCurrentDocument,
+    ],
   );
 
   if (!workspace || !activeDocument) {
@@ -330,11 +617,14 @@ export function WorkspaceApp() {
           <input
             aria-label="Diagram name"
             onChange={(event) =>
-              updateCurrentDocument((current) => ({
-                ...current,
-                name: event.target.value,
-                updatedAt: new Date().toISOString(),
-              }))
+              updateCurrentDocument(
+                (current) => ({
+                  ...current,
+                  name: event.target.value,
+                  updatedAt: new Date().toISOString(),
+                }),
+                "rename",
+              )
             }
             spellCheck={false}
             value={activeDocument.name}
@@ -345,9 +635,44 @@ export function WorkspaceApp() {
           </span>
         </div>
         <div className="topbar__actions">
+          <div className="history-controls">
+            <button
+              aria-label="Undo"
+              disabled={!historyAvailability.canUndo}
+              onClick={undo}
+              title="Undo (Ctrl/⌘ Z)"
+              type="button"
+            >
+              <Undo2 />
+            </button>
+            <button
+              aria-label="Redo"
+              disabled={!historyAvailability.canRedo}
+              onClick={redo}
+              title="Redo (Ctrl/⌘ Shift Z)"
+              type="button"
+            >
+              <Redo2 />
+            </button>
+            <button
+              aria-label="Version history"
+              className={historyOpen ? "is-active" : ""}
+              onClick={() => {
+                setHistoryOpen((current) => !current);
+                setAiOpen(false);
+              }}
+              title="Version history"
+              type="button"
+            >
+              <History />
+            </button>
+          </div>
           <button
             className={`ai-trigger ${aiOpen ? "is-active" : ""}`}
-            onClick={() => setAiOpen((current) => !current)}
+            onClick={() => {
+              setAiOpen((current) => !current);
+              setHistoryOpen(false);
+            }}
             type="button"
           >
             <Sparkles />
@@ -560,6 +885,29 @@ export function WorkspaceApp() {
         open={aiOpen}
         source={activeDocument.source}
       />
+      <HistoryDrawer
+        onClose={() => setHistoryOpen(false)}
+        onCompare={(snapshot) => {
+          setComparisonSnapshot(snapshot);
+          setHistoryOpen(false);
+        }}
+        onCreate={() => void createManualSnapshot()}
+        onDelete={(snapshotId) => void deleteSnapshot(snapshotId)}
+        onRename={(snapshotId, name) =>
+          void renameSnapshot(snapshotId, name)
+        }
+        onRestore={(snapshot) => void restoreSnapshot(snapshot)}
+        open={historyOpen}
+        snapshots={snapshots}
+      />
+      {comparisonSnapshot ? (
+        <MigrationWorkspace
+          current={activeDocument}
+          onClose={() => setComparisonSnapshot(undefined)}
+          onRestore={(snapshot) => void restoreSnapshot(snapshot)}
+          snapshot={comparisonSnapshot}
+        />
+      ) : null}
     </main>
   );
 }
