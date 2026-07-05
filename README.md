@@ -1,7 +1,6 @@
 # Schema Studio
 
-Schema Studio is a private, local-first database diagram editor inspired by
-dbdiagram.io. The application has been rewritten from Vue/Quasar to Next.js,
+Schema Studio is a private, local-first database diagram editor. The application has been rewritten using
 React, and strict TypeScript.
 
 All diagrams and version snapshots are stored in IndexedDB in the browser.
