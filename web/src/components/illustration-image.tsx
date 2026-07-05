@@ -46,6 +46,7 @@ export function IllustrationImage({
       height={height}
       priority={priority}
       src={resolveIllustrationPath(illustration)}
+      style={{ height: "auto" }}
       width={width}
     />
   );

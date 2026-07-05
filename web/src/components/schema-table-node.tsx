@@ -57,7 +57,6 @@ function SchemaTableNodeComponent({
                   <Link2
                     aria-label="Foreign key"
                     className="schema-field__foreign"
-                    title="Foreign key"
                   />
                 ) : null}
               </span>
