@@ -32,7 +32,7 @@ Flow, CodeMirror, and `@dbml/core`.
 
 ## Development
 
-Node.js 20.9 or newer is required.
+Node.js 22 is required to match the Vercel production runtime.
 
 ```bash
 npm install
