@@ -50,23 +50,26 @@ npm run build
 npm audit --omit=dev
 ```
 
-## Self-host
+## Deploy to Vercel
 
-The production build uses Next.js standalone output:
+Import the Git repository into Vercel and set `web` as the Root Directory.
+Vercel detects Next.js automatically, so no custom build or output configuration
+is required.
 
-```bash
-npm run build
-node .next/standalone/server.js
-```
+Add `AI_BASE_URL`, `AI_MODEL`, and `AI_API_KEY` under Project Settings →
+Environment Variables. Mark `AI_API_KEY` as Sensitive and enable Deployment
+Protection because this is a single-user app.
 
 The entire workspace and up to 50 snapshots per diagram stay in browser
-IndexedDB. Back up important diagrams with the DBML export before clearing
-browser data.
+IndexedDB. Browser storage is isolated per Vercel domain and preview deployment.
+Back up important diagrams with the DBML export before clearing browser data.
 
 ## AI configuration
 
-The server route supports providers exposing an OpenAI-compatible
-`/chat/completions` endpoint. Credentials are never returned to the browser.
+The server-only `/api/ai` route supports providers exposing an OpenAI-compatible
+`/chat/completions` endpoint. The browser sends DBML and the selected action only
+to this same-origin route. `AI_API_KEY` is read by the Node.js server and is
+never serialized into browser responses or the client bundle.
 
 ```bash
 cp .env.example .env.local
@@ -89,3 +92,7 @@ AI_MODEL=your-local-model
 
 Restart the development server after changing environment variables. DBML is
 sent to the configured provider only when you click an AI action.
+
+Set production secrets in Vercel Environment Variables and never commit `.env`
+to Git. Rotate a key immediately if it has appeared in terminal output,
+screenshots, logs, or chat history.
