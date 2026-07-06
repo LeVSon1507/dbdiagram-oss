@@ -99,7 +99,7 @@ export type ParseResult =
       diagnostics: SchemaDiagnostic[];
     };
 
-const DEFAULT_TABLE_COLOR = "#7c3aed";
+const DEFAULT_TABLE_COLOR = "#8e6a3f";
 
 function tableNodeId(schemaName: string, tableName: string): string {
   return `${schemaName}.${tableName}`;

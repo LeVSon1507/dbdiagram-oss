@@ -36,6 +36,7 @@ import {
   useState,
 } from "react";
 
+import { updateDbmlFieldType } from "@/lib/dbml-source-edit";
 import { parseDbml } from "@/lib/schema";
 import {
   commitHistory,
@@ -399,6 +400,63 @@ export function WorkspaceApp() {
     },
     [updateCurrentDocument],
   );
+
+  const updateDiagramFieldType = useCallback(
+    (tableId: string, fieldName: string, nextType: string) => {
+      updateCurrentDocument(
+        (current) => {
+          const source = updateDbmlFieldType(
+            current.source,
+            tableId,
+            fieldName,
+            nextType,
+          );
+          return source === current.source
+            ? current
+            : {
+                ...current,
+                source,
+                updatedAt: new Date().toISOString(),
+              };
+        },
+        "diagram",
+      );
+    },
+    [updateCurrentDocument],
+  );
+
+  useEffect(() => {
+    const closeActionMenus = (except?: HTMLDetailsElement) => {
+      document
+        .querySelectorAll<HTMLDetailsElement>("details.action-menu[open]")
+        .forEach((menu) => {
+          if (menu !== except) menu.removeAttribute("open");
+        });
+    };
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (!(event.target instanceof Element)) return;
+      const clickedMenu = event.target.closest<HTMLDetailsElement>(
+        "details.action-menu",
+      );
+      const clickedOption = event.target.closest(
+        ".action-menu__content button",
+      );
+      closeActionMenus(clickedOption ? undefined : clickedMenu ?? undefined);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeActionMenus();
+    };
+    const handleWindowBlur = () => closeActionMenus();
+
+    document.addEventListener("click", handleDocumentClick);
+    document.addEventListener("keydown", handleEscape);
+    globalThis.addEventListener("blur", handleWindowBlur);
+    return () => {
+      document.removeEventListener("click", handleDocumentClick);
+      document.removeEventListener("keydown", handleEscape);
+      globalThis.removeEventListener("blur", handleWindowBlur);
+    };
+  }, []);
 
   const refreshSnapshots = useCallback(
     async (documentId: string) => {
@@ -1084,6 +1142,7 @@ export function WorkspaceApp() {
                 {parseResult.ok ? (
                   <DiagramCanvas
                     key={activeDocument.id}
+                    onFieldTypeChange={updateDiagramFieldType}
                     onPositionsChange={updatePositions}
                     positions={activeDocument.positions}
                     schema={parseResult.schema}

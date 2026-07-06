@@ -25,11 +25,13 @@ export type RelationshipEdge = Edge<RelationshipEdgeData, "relationship">;
 interface CardinalityMarkerProps {
   cardinality: CardinalityLabel;
   id: string;
+  selected: boolean;
 }
 
 function CardinalityMarker({
   cardinality,
   id,
+  selected,
 }: CardinalityMarkerProps) {
   return (
     <marker
@@ -44,12 +46,12 @@ function CardinalityMarker({
     >
       {cardinality === "1" ? (
         <path
-          className="relationship-marker"
+          className={`relationship-marker ${selected ? "is-selected" : ""}`}
           d="M 9 -7 L 9 7 M 15 -7 L 15 7"
         />
       ) : (
         <path
-          className="relationship-marker"
+          className={`relationship-marker ${selected ? "is-selected" : ""}`}
           d="M 6 -8 L 15 0 L 6 8 M 15 -8 L 15 8"
         />
       )}
@@ -94,10 +96,12 @@ function RelationshipEdgeComponent({
         <CardinalityMarker
           cardinality={sourceCardinality}
           id={sourceMarkerId}
+          selected={Boolean(selected)}
         />
         <CardinalityMarker
           cardinality={targetCardinality}
           id={targetMarkerId}
+          selected={Boolean(selected)}
         />
       </defs>
       <BaseEdge

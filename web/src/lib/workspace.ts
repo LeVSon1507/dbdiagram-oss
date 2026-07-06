@@ -26,14 +26,14 @@ export const SAMPLE_SOURCE = `Project personal_blog {
   Note: 'A local-first database design'
 }
 
-Table users [headercolor: #7c3aed] {
+Table users [headercolor: #8e6a3f] {
   id bigint [pk, increment]
   email varchar(255) [not null, unique]
   display_name varchar(120)
   created_at timestamp [not null, default: \`now()\`]
 }
 
-Table posts [headercolor: #0891b2] {
+Table posts [headercolor: #648a5d] {
   id bigint [pk, increment]
   author_id bigint [not null]
   title varchar(240) [not null]
@@ -42,7 +42,7 @@ Table posts [headercolor: #0891b2] {
   published_at timestamp
 }
 
-Table comments [headercolor: #ea580c] {
+Table comments [headercolor: #9a856c] {
   id bigint [pk, increment]
   post_id bigint [not null]
   author_id bigint [not null]

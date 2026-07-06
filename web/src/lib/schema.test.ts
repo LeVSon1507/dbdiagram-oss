@@ -29,6 +29,7 @@ describe("parseDbml", () => {
       name: "users",
       color: "#2563eb",
     });
+    expect(result.schema.tables[1].color).toBe("#8e6a3f");
     expect(result.schema.tables[0].fields[1]).toMatchObject({
       name: "email",
       type: "varchar",

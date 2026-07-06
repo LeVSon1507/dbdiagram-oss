@@ -32,6 +32,11 @@ type DiagramCanvasProps = Readonly<{
   positions: Record<string, Point>;
   search: string;
   theme: Theme;
+  onFieldTypeChange: (
+    tableId: string,
+    fieldName: string,
+    nextType: string,
+  ) => void;
   onPositionsChange: (positions: Record<string, Point>) => void;
 }>;
 
@@ -72,6 +77,7 @@ function buildForeignFieldNamesByTable(
 function buildLaidOutNodes(
   schema: ParsedSchema,
   positions: Record<string, Point>,
+  onFieldTypeChange: DiagramCanvasProps["onFieldTypeChange"],
 ): SchemaTableNode[] {
   const graph = new dagre.graphlib.Graph();
   graph.setDefaultEdgeLabel(() => ({}));
@@ -107,6 +113,7 @@ function buildLaidOutNodes(
           foreignFieldNamesByTable.get(table.id) ?? new Set<string>(),
         ),
         dimmed: false,
+        onFieldTypeChange,
       },
     };
   });
@@ -173,12 +180,13 @@ function DiagramFlow({
   positions,
   search,
   theme,
+  onFieldTypeChange,
   onPositionsChange,
 }: DiagramCanvasProps) {
   const [miniMapVisible, setMiniMapVisible] = useState(true);
   const laidOutNodes = useMemo(
-    () => buildLaidOutNodes(schema, positions),
-    [positions, schema],
+    () => buildLaidOutNodes(schema, positions, onFieldTypeChange),
+    [onFieldTypeChange, positions, schema],
   );
   const initialNodes = useMemo(
     () => applySearchToNodes(laidOutNodes, search),
@@ -218,7 +226,7 @@ function DiagramFlow({
 
   const handleAutoLayout = useCallback(() => {
     const autoLayout = applySearchToNodes(
-      buildLaidOutNodes(schema, {}),
+      buildLaidOutNodes(schema, {}, onFieldTypeChange),
       search,
     );
     setNodes(autoLayout);
@@ -228,7 +236,14 @@ function DiagramFlow({
     globalThis.requestAnimationFrame(() => {
       void fitView({ duration: 300, padding: 0.16 });
     });
-  }, [fitView, onPositionsChange, schema, search, setNodes]);
+  }, [
+    fitView,
+    onFieldTypeChange,
+    onPositionsChange,
+    schema,
+    search,
+    setNodes,
+  ]);
 
   const toggleMiniMapVisibility = useCallback(() => {
     setMiniMapVisible((currentVisible) => !currentVisible);
@@ -253,7 +268,7 @@ function DiagramFlow({
       snapToGrid
     >
       <Background
-        color={theme === "dark" ? "#4b3d30" : "#d8c7ab"}
+        color={theme === "dark" ? "#464c4f" : "#d2d8d1"}
         gap={24}
         size={1}
         variant={BackgroundVariant.Dots}
@@ -262,10 +277,10 @@ function DiagramFlow({
         <MiniMap
           maskColor={
             theme === "dark"
-              ? "rgba(22, 17, 13, .72)"
-              : "rgba(248, 243, 234, .72)"
+              ? "rgba(27, 29, 31, .78)"
+              : "rgba(244, 246, 243, .72)"
           }
-          nodeColor="#b59265"
+          nodeColor={theme === "dark" ? "#c2a783" : "#a8b1a9"}
           pannable
           zoomable
         />

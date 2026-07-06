@@ -2,6 +2,7 @@ import type { DiagramDocument } from "./workspace";
 
 export type HistoryReason =
   | "typing"
+  | "diagram"
   | "drag"
   | "import"
   | "restore"
